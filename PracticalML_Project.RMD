@@ -1,0 +1,108 @@
+---
+title: "Practical ML Project"
+author: "jove"
+output: html_document
+---
+## Introduction
+This is the report on the Course Project of Paractical Machine Learning Course. The goal of the project is, based on the Weight lifting Exercise Dataset (from the [Human Activity Recognition programme](http://groupware.les.inf.puc-rio.br/har)), to "predict the manner in which they did the exercise", i.e. how well the weight lifting activity was perfomred by the wearer.
+
+## Getting the data
+
+Firstly, the training and testing data set are loaded from given URLs.
+
+```{r}
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+df_training <- read.csv(file=trainUrl, na.strings=c("NA",""), header=TRUE)
+df_testing <- read.csv(file=testUrl, na.strings=c("NA",""), header=TRUE)
+```
+## preProcess
+
+Observing that there are many columns within lot of NAs that do not contribute the prediction model, these columns are eliminated.
+
+```{r}
+set.seed(12345)
+#count the number of NAs in each col
+countNA <- as.vector(apply(df_training, 2, function (x) sum(is.na(x))))
+# set elimation threshold
+th_NA <- round(nrow(df_training)*0.9)
+delete_idx <- which(countNA >=th_NA)
+train_V1 <- df_training[,-delete_idx]
+# remove the 1st & columns as they are unrelated to prediction
+train_V2 <- train_V1[,8:dim(train_V1)[2]]
+
+# perform the same activities on testing set
+countNA <- as.vector(apply(df_testing, 2, function (x) sum(is.na(x))))
+th_NA <- round(nrow(df_testing)*0.9)
+delete_idx <- which(countNA >=th_NA)
+test_V1 <- df_testing[,-delete_idx]
+test_V2 <- test_V1[,8:dim(train_V1)[2]]
+rm(train_V1,test_V1)
+
+# check whether the two sets have the same variables
+identical(colnames(test_V2[,-53]),colnames(train_V2[,-53]))
+```
+Before building the prediction model, the cleaned training set is divided into traiing subset and cross validation subset.
+
+```{r}
+library(caret)
+idx <- createDataPartition(train_V2$classe, p=0.7, list=FALSE)
+trainDf <- train_V2[idx,]
+cvDf <- train_V2[-idx,]
+```
+## Using ML algorithms for prediction
+
+Here we test two ML agorithm for prediction: decision tree and random forest. The one with higher accuracy will be choosen as our finalprediction model.
+
+- ### First Predicion Model: Decision Tree
+
+```{r}
+library(caret)
+set.seed(1234)
+modFit1 <- train(classe ~., method="rpart", data=trainDf)
+#print(modFit$finalModel)
+# plot tree
+library(rattle)
+Sys.setlocale("LC_TIME", "C")
+fancyRpartPlot(modFit1$finalModel)
+```
+
+Now apply the model on the cross validation dataset.
+```{r}
+predcv1 <- predict(modFit1,cvDf)
+confusionMatrix(predcv1, cvDf$classe)
+```
+
+- ### Second Predicion Model: Random Forest
+
+```{r}
+library(randomForest)
+modFit2 <- randomForest(classe ~. , data=trainDf)
+# check cross validation
+predcv2 <- predict(modFit2,cvDf)
+confusionMatrix(predcv2, cvDf$classe)
+```
+- ### Decision
+As expected, Random Forest algorithm performed better than Decision Trees.
+Accuracy for Random Forest model was 0.992 (95% CI: (0.990, 0.994)) compared to 0.492 (95% CI: (0.479, 0.505)) for Decision Tree model. Thus the random Forest model is choosen as our final model. 
+
+### Generating files for Submission
+
+```{r}
+# apply our final model on testing dataset
+predTest <- predict(modFit2, test_V2)
+predTest
+
+# write files for submission
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predTest)
+```
+
